@@ -1,0 +1,1566 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Local-first household budget sync API
+servers:
+  - url: /api
+tags:
+  - name: health
+  - name: pairing
+  - name: budget
+  - name: sync
+  - name: backup
+paths:
+  /ping:
+    get:
+      operationId: getServerPing
+      tags: [health]
+      summary: Identify a local Home Ledger server without disclosing household data
+      responses:
+        "200":
+          description: Local server identity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerPing" }
+  /discovery/verify:
+    post:
+      operationId: verifyDiscoveredServer
+      tags: [health]
+      summary: Prove possession of an existing device session without receiving its token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DiscoveryChallenge" }
+      responses:
+        "200":
+          description: Challenge-bound server proof
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DiscoveryProof" }
+        "400": { description: Invalid challenge }
+        "404": { description: No matching device }
+        "429": { description: Too many challenges }
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+  /demo/reset:
+    post:
+      operationId: resetDemo
+      tags: [pairing]
+      summary: Create a fresh local demo household
+      description: Available only when the server is explicitly started in development demo mode.
+      responses:
+        "200":
+          description: Demo credentials and pairing code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemoBootstrap" }
+        "404":
+          description: Demo reset is disabled
+  /ledger/reset:
+    post:
+      operationId: resetLedger
+      tags: [budget]
+      summary: Clear ledger activity while preserving the household
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Ledger reset completed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedgerResetResponse" }
+        "401":
+          description: Invalid or revoked session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Master role required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /backups/status:
+    get:
+      operationId: getBackupStatus
+      tags: [backup]
+      summary: Get master-only encrypted backup readiness and last success
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Encrypted backup status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackupStatus" }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /backups/save-to-server:
+    post:
+      operationId: saveBackupToServer
+      tags: [backup]
+      summary: Create an encrypted backup on the server's configured mounted USB/NAS destination (master only)
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Encrypted archive saved to the verified server mount; no archive is returned to the device
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackupSaved" }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Recovery not enrolled or verified destination unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Backup write failed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /backups/export:
+    post:
+      operationId: exportBackup
+      tags: [backup]
+      summary: Create and download a complete encrypted household backup (master only)
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Authenticated, encrypted portable backup archive
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Recovery phrase not enrolled, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /household/reinitialize:
+    post:
+      operationId: reinitializeHousehold
+      tags: [pairing]
+      summary: Destructively replace a household (master only)
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdReinitializationInput" }
+      responses:
+        "200":
+          description: Replacement owner session and empty household
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionBootstrap" }
+        "400": { description: Invalid confirmation or setup input, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /pairing/invitations/redeem:
+    post:
+      operationId: redeemHouseholdInvitation
+      tags: [pairing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvitationRedemptionInput" }
+      responses:
+        "200":
+          description: Device session and initial state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionBootstrap" }
+        "400":
+          description: Invalid, expired, redeemed, or revoked invitation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { description: Too many pairing attempts, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /household/setup:
+    post:
+      operationId: setupHousehold
+      tags: [pairing]
+      summary: Create the first household and choose its base currency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdSetupInput" }
+      responses:
+        "201":
+          description: Owner session and initial state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionBootstrap" }
+        "400": { description: Setup unavailable or invalid, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /household/invitations:
+    get:
+      operationId: listHouseholdInvitations
+      tags: [pairing]
+      summary: List household invitations without secret codes (Master only)
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Invitation status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdInvitationList" }
+        "401":
+          description: Invalid, expired, or revoked session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      operationId: createHouseholdInvitation
+      tags: [household]
+      summary: Invite a new member or authorize another device for an existing account
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdInvitationInput" }
+      responses:
+        "201":
+          description: One-use invitation; secret code returned only at creation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdInvitationCreated" }
+        "400": { description: Invalid or duplicate invited identity, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /household/invitations/{invitationId}:
+    delete:
+      operationId: revokeHouseholdInvitation
+      tags: [household]
+      summary: Revoke an unused invitation
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: invitationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Revoked invitation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdInvitation" }
+        "400": { description: Invitation unavailable or already redeemed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /bootstrap:
+    get:
+      operationId: getBootstrap
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Current household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "401":
+          description: Invalid or revoked session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /test-clock:
+    get:
+      operationId: getTestClock
+      tags: [budget]
+      summary: Read the accelerated test clock
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Current simulated business time
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TestClockStatus" }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Unavailable outside accelerated-test builds }
+  /test-clock/advance:
+    post:
+      operationId: advanceTestClock
+      tags: [budget]
+      summary: Advance simulated business time and materialize recurring entries
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TestClockAdvanceInput" }
+      responses:
+        "200":
+          description: Updated clock and household state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [clock, createdRecurringTransactions, state]
+                properties:
+                  clock: { $ref: "#/components/schemas/TestClockStatus" }
+                  createdRecurringTransactions: { type: integer }
+                  state: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid advance unit, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Unavailable outside accelerated-test builds }
+  /sync:
+    post:
+      operationId: syncOperations
+      tags: [sync]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SyncRequest" }
+      responses:
+        "200":
+          description: Acknowledgements and authoritative events
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncResponse" }
+        "401":
+          description: Invalid or revoked session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /accounts:
+    post:
+      operationId: createSavingsAccount
+      tags: [budget]
+      summary: Create an owner-only savings account
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsAccountInput" }
+      responses:
+        "201":
+          description: Savings account created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { description: Invalid account, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /accounts/{accountId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceToken"
+      - name: accountId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: updateSavingsAccount
+      tags: [budget]
+      summary: Rename, archive, or restore an owned savings account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsAccountUpdate" }
+      responses:
+        "200":
+          description: Savings account updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { description: Invalid account update, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Account cannot be managed by this user, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Household dashboard
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dashboard" }
+  /transactions/{transactionId}/correction:
+    post:
+      operationId: correctTransaction
+      tags: [budget]
+      summary: Correct a posted transaction without deleting its history
+      description: A description-only change with the same amount, category, and UTC calendar date updates the existing transaction and linked savings contribution in place, with a durable audit event recording the old and new wording. The original timestamp is preserved even when occurredAt supplies a different time on that same date. Amount, category, or UTC calendar date changes retain the reversal-and-replacement history.
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: transactionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionCorrectionInput" }
+      responses:
+        "200":
+          description: Corrected authoritative household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid correction, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Activity cannot be managed by this user, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /transactions/{transactionId}/cancellation:
+    post:
+      operationId: cancelTransaction
+      tags: [budget]
+      summary: Cancel a posted transaction without deleting its history
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: transactionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TransactionCancellationInput" }
+      responses:
+        "200":
+          description: Cancelled authoritative household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid cancellation, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Activity cannot be managed by this user, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /categories:
+    post:
+      operationId: createCategory
+      tags: [budget]
+      summary: Create a shared or personal expense category
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryInput" }
+      responses:
+        "201":
+          description: Category created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400":
+          description: Invalid category
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /budgets:
+    get:
+      operationId: getBudgets
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      responses:
+        "200":
+          description: Visible budget status and history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [current, history]
+                properties:
+                  current: { type: array, items: { $ref: "#/components/schemas/Budget" } }
+                  history: { type: array, items: { $ref: "#/components/schemas/Budget" } }
+    post:
+      operationId: createBudget
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BudgetInput" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid budget, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Budget cannot be managed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /budgets/{categoryId}:
+    patch:
+      operationId: updateBudget
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BudgetInput" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid budget, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Budget cannot be managed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      operationId: deleteBudget
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Budget disabled for the current month }
+        "403":
+          description: Master role required for shared categories
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /budget-alerts/{alertId}/acknowledgement:
+    post:
+      operationId: acknowledgeBudgetAlert
+      tags: [budget]
+      summary: Dismiss a visible budget alert
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: alertId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Alert not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Alert is not visible to this user, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals:
+    post:
+      operationId: createSavingsGoal
+      tags: [budget]
+      summary: Create a personal or shared savings goal
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalInput" }
+      responses:
+        "201":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid goal, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals/{goalId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceToken"
+      - name: goalId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: updateSavingsGoal
+      tags: [budget]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalUpdate" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid goal update, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      operationId: deleteSavingsGoal
+      tags: [budget]
+      responses:
+        "410": { description: Savings goals are cancelled rather than deleted, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals/{goalId}/cancellation:
+    post:
+      operationId: cancelSavingsGoal
+      tags: [budget]
+      summary: Cancel a goal while preserving its history; shared funds remain owner-pending
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: goalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalCancellationInput" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid cancellation, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals/{goalId}/settlement:
+    post:
+      operationId: settleSavingsGoal
+      tags: [budget]
+      summary: Settle the authenticated owner's transfer-backed funds
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: goalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalCancellationInput" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid settlement, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: User is not authorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals/{goalId}/contributions:
+    post:
+      operationId: contributeToSavingsGoal
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: goalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalContributionInput" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid contribution, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals/{goalId}/contributions/{contributionId}/cancellation:
+    post:
+      operationId: cancelSavingsGoalContribution
+      description: Cancel the authenticated contributor's goal allocation without changing any posted transfer. Personal and mirrored shared progress are updated together; history is preserved.
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: goalId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: contributionId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalContributionCancellationInput" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid cancellation, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Invalid session, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Only the contributor may cancel, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goals/{goalId}/participants:
+    post:
+      operationId: inviteSavingsGoalParticipant
+      tags: [budget]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: goalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavingsGoalParticipantInput" }
+      responses:
+        "201":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid invitation, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Master role required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /savings-goal-participants/{participantId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceToken"
+      - name: participantId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: respondToSavingsGoalInvitation
+      tags: [budget]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SavingsGoalInvitationResponse"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400": { description: Invalid response, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Invitation belongs to another user, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /categories/{categoryId}:
+    patch:
+      operationId: updateCategory
+      tags: [budget]
+      summary: Rename, recolor, archive, or restore a category
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: categoryId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryUpdate" }
+      responses:
+        "200":
+          description: Category updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400":
+          description: Invalid category update
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Category cannot be managed by this user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /recurring-rules:
+    post:
+      operationId: createRecurringRule
+      tags: [budget]
+      summary: Create a recurring income or expense rule
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringRuleInput" }
+      responses:
+        "201":
+          description: Recurring rule created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringRule" }
+        "400":
+          description: Invalid recurring rule
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Invalid or expired session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /recurring-rules/{ruleId}:
+    patch:
+      operationId: updateRecurringRule
+      tags: [budget]
+      summary: Edit, pause, or resume a recurring rule
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: ruleId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecurringRuleUpdate" }
+      responses:
+        "200":
+          description: Recurring rule updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecurringRule" }
+        "400":
+          description: Invalid recurring rule update
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Invalid or expired session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteRecurringRule
+      tags: [budget]
+      summary: Delete a recurring rule
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: ruleId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Recurring rule deleted }
+        "401":
+          description: Invalid or expired session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /devices/{deviceId}/revoke:
+    post:
+      operationId: revokeDevice
+      tags: [pairing]
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Device revoked }
+        "403":
+          description: Master role required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /household/allocations:
+    patch:
+      operationId: updateHouseholdAllocations
+      tags: [budget]
+      summary: Update shared allocation percentages for active household members
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdAllocationUpdate" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400":
+          description: Invalid allocation total or member list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Master role required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /household/master:
+    patch:
+      operationId: transferHouseholdMaster
+      tags: [budget]
+      summary: Transfer the master role to an active household member
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HouseholdMasterTransfer" }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400":
+          description: Invalid or inactive target member
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Master role required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /household/members/{userId}:
+    delete:
+      operationId: removeHouseholdMember
+      tags: [budget]
+      summary: Remove a member and revoke all of their devices
+      parameters:
+        - $ref: "#/components/parameters/DeviceToken"
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HouseholdState" }
+        "400":
+          description: Member cannot be removed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Master role required
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+components:
+  parameters:
+    DeviceToken:
+      name: x-device-token
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    ServerPing:
+      type: object
+      required: [id, product, variant]
+      properties:
+        id: { type: string }
+        product: { type: string, enum: [home-ledger] }
+        variant: { type: string, enum: [production, accelerated-test] }
+    DiscoveryChallenge:
+      type: object
+      required: [deviceId, userId, groupId, nonce]
+      properties:
+        deviceId: { type: string, minLength: 1, maxLength: 160 }
+        userId: { type: string, minLength: 1, maxLength: 160 }
+        groupId: { type: string, minLength: 1, maxLength: 160 }
+        nonce: { type: string, minLength: 16, maxLength: 128, pattern: "^[a-zA-Z0-9-]+$" }
+    DiscoveryProof:
+      type: object
+      required: [id, variant, proof]
+      properties:
+        id: { type: string }
+        variant: { type: string, enum: [production, accelerated-test] }
+        proof: { type: string, pattern: "^[a-f0-9]{64}$" }
+    HealthStatus:
+      type: object
+      required: [status, storage, websocket]
+      properties:
+        status: { type: string }
+        storage: { type: string }
+        websocket: { type: boolean }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    BackupStatus:
+      type: object
+      required: [enrolled, destinationConfigured, destinationAvailable, lastSuccessfulAt, lastError]
+      properties:
+        reviewDemo: { type: boolean, description: "True only on the isolated hosted reviewer demo; local recovery-file operations are unavailable." }
+        enrolled: { type: boolean }
+        destinationConfigured: { type: boolean }
+        destinationAvailable: { type: boolean }
+        lastSuccessfulAt: { type: [string, 'null'], format: date-time }
+        lastError: { type: [string, 'null'] }
+    BackupSaved:
+      type: object
+      required: [savedAt]
+      properties:
+        savedAt: { type: string, format: date-time }
+    DemoBootstrap:
+      type: object
+      required: [serverName]
+      properties:
+        serverName: { type: string }
+    TestClockStatus:
+      type: object
+      required: [acceleratedTest, serverNow, offsetMs]
+      properties:
+        acceleratedTest: { type: boolean }
+        serverNow: { type: string, format: date-time }
+        offsetMs: { type: integer }
+    TestClockAdvanceInput:
+      type: object
+      required: [unit]
+      properties:
+        unit: { type: string, enum: [day, week, month] }
+    LedgerResetResponse:
+      type: object
+      required: [serverSequence]
+      properties:
+        serverSequence: { type: integer }
+    InvitationRedemptionInput:
+      type: object
+      additionalProperties: false
+      required: [invitationCode, deviceId, deviceName]
+      properties:
+        invitationCode: { type: string, minLength: 20, maxLength: 40 }
+        deviceId: { type: string, minLength: 1, maxLength: 200 }
+        deviceName: { type: string, minLength: 1, maxLength: 80 }
+    HouseholdInvitationInput:
+      type: object
+      additionalProperties: false
+      description: Supply displayName for a new member or userId for an existing account, never both.
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        userId: { type: string, minLength: 1 }
+    HouseholdInvitation:
+      type: object
+      required: [id, displayName, userId, role, createdAt, expiresAt, status]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        userId: { type: [string, 'null'] }
+        role: { type: string, enum: [master, member] }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        status: { type: string, enum: [pending, redeemed, revoked, expired] }
+    HouseholdInvitationCreated:
+      type: object
+      required: [invitation, invitationCode]
+      properties:
+        invitation: { $ref: "#/components/schemas/HouseholdInvitation" }
+        invitationCode: { type: string }
+    HouseholdInvitationList:
+      type: object
+      required: [invitations]
+      properties:
+        invitations: { type: array, items: { $ref: "#/components/schemas/HouseholdInvitation" } }
+    HouseholdSetupInput:
+      type: object
+      required: [householdName, displayName, currency, deviceId, deviceName]
+      properties:
+        householdName: { type: string, minLength: 1, maxLength: 80 }
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        currency: { type: string, enum: [EUR, USD, GBP] }
+        deviceId: { type: string }
+        deviceName: { type: string }
+    HouseholdReinitializationInput:
+      type: object
+      required: [householdName, displayName, currency, deviceId, deviceName, confirmation]
+      properties:
+        householdName: { type: string, minLength: 1, maxLength: 80 }
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        currency: { type: string, enum: [EUR, USD, GBP] }
+        deviceId: { type: string }
+        deviceName: { type: string }
+        confirmation: { type: string, enum: ["REINITIALIZE HOUSEHOLD"] }
+    SessionBootstrap:
+      type: object
+      required: [deviceToken, user, state]
+      properties:
+        deviceToken: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+        state: { $ref: "#/components/schemas/HouseholdState" }
+    User:
+      type: object
+      required: [id, displayName, role, defaultShareBps]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        role: { type: string, enum: [master, member] }
+        defaultShareBps: { type: integer, minimum: 0, maximum: 10000 }
+    HouseholdAllocation:
+      type: object
+      required: [userId, basisPoints]
+      properties:
+        userId: { type: string }
+        basisPoints: { type: integer, minimum: 0, maximum: 10000 }
+    HouseholdAllocationUpdate:
+      type: object
+      required: [allocations]
+      properties:
+        allocations:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/HouseholdAllocation" }
+    HouseholdMasterTransfer:
+      type: object
+      required: [targetUserId]
+      properties:
+        targetUserId: { type: string, minLength: 1 }
+    Account:
+      type: object
+      required: [id, name, kind, role, ownerUserId, currency, archived]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [personal, shared] }
+        role: { type: string, enum: [main, savings, shared] }
+        ownerUserId: { type: [string, "null"] }
+        currency: { type: string }
+        archived: { type: boolean }
+        balanceMinor: { type: integer }
+        allocations:
+          type: array
+          items:
+            type: object
+            required: [goalId, goalName, amountMinor]
+            properties:
+              goalId: { type: string }
+              goalName: { type: string }
+              amountMinor: { type: integer, minimum: 0 }
+        allocatedMinor: { type: integer, minimum: 0 }
+        unallocatedMinor: { type: integer, minimum: 0 }
+    SavingsAccountInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+    SavingsAccountUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        archived: { type: boolean }
+    Category:
+      type: object
+      required: [id, name, scope, ownerUserId, color, archived, system]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        scope: { type: string, enum: [shared, personal] }
+        ownerUserId: { type: [string, "null"] }
+        color: { type: string }
+        archived: { type: boolean }
+        system: { type: boolean }
+    CategoryInput:
+      type: object
+      required: [name, scope, color]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 40 }
+        scope: { type: string, enum: [shared, personal] }
+        color: { type: string, pattern: "^#[0-9A-Fa-f]{6}$" }
+    CategoryUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 40 }
+        color: { type: string, pattern: "^#[0-9A-Fa-f]{6}$" }
+        archived: { type: boolean }
+    AllocationShare:
+      type: object
+      required: [userId, basisPoints, amountMinor]
+      properties:
+        userId: { type: string }
+        basisPoints: { type: integer }
+        amountMinor: { type: integer }
+    Transaction:
+      type: object
+      required: [id, kind, accountId, amountMinor, currency, categoryId, note, occurredAt, createdByUserId, status, allocationShares]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [income, expense, transfer, reversal] }
+        accountId: { type: string }
+        destinationAccountId: { type: [string, "null"] }
+        amountMinor: { type: integer }
+        currency: { type: string }
+        categoryId: { type: string }
+        note: { type: string }
+        occurredAt: { type: string, format: date-time }
+        createdByUserId: { type: string }
+        status: { type: string, enum: [posted, reversed] }
+        reversesTransactionId: { type: [string, "null"] }
+        paymentAccountId: { type: [string, "null"], deprecated: true, description: Retired legacy funding field. New purchases must omit this field or pass null; personal payer attribution uses personalPayerAccountId and never creates a second ledger transaction. }
+        personalPayerAccountId: { type: [string, "null"], description: Optional personal account that paid this Shared expense in real life. Attribution only; it does not change either account balance or Shared expense totals. }
+        fundingTransactionId: { type: [string, "null"], readOnly: true, description: Automatically linked funding transfer for a personal-funded shared purchase. }
+        linkedExpenseTransactionId: { type: [string, "null"], readOnly: true, description: Shared purchase funded by this automatically generated transfer. Manage the purchase rather than this leg independently. }
+        isAudit: { type: boolean, readOnly: true, description: Immutable automatic purchase funding history or its compensating adjustment. Hiding it in Activity never removes its balance effect. }
+        auditRelatedTransactionId: { type: [string, "null"], readOnly: true, description: Original Shared purchase associated with this audit entry. }
+        allocationShares:
+          type: array
+          items: { $ref: "#/components/schemas/AllocationShare" }
+    TransactionCorrectionInput:
+      type: object
+      required: [operationId, amountMinor, categoryId, note]
+      properties:
+        operationId: { type: string, minLength: 1, maxLength: 160 }
+        amountMinor: { type: integer, minimum: 1 }
+        categoryId: { type: string, minLength: 1 }
+        note: { type: string, minLength: 1, maxLength: 160 }
+        paymentAccountId: { type: [string, "null"], deprecated: true, description: Retired legacy funding field. Only absent or null is accepted. }
+        personalPayerAccountId: { type: [string, "null"], description: Optional personal payer attribution for a Shared expense; this does not create a personal ledger debit. }
+        occurredAt: { type: string, format: date-time, description: Selected activity date and time. An unchanged UTC calendar date preserves the original timestamp for description-only edits, including when a client sends noon UTC for the same date. A different UTC date creates a replacement. }
+    TransactionCancellationInput:
+      type: object
+      required: [operationId]
+      properties:
+        operationId: { type: string, minLength: 1, maxLength: 160 }
+    Budget:
+      type: object
+      required: [id, categoryId, month, limitMinor, warningPercent, rolloverMinor, enabled, spentMinor, percentUsed, status]
+      properties:
+        id: { type: string }
+        categoryId: { type: string }
+        month: { type: string }
+        limitMinor: { type: integer }
+        warningPercent: { type: integer }
+        rolloverMinor: { type: integer }
+        enabled: { type: boolean }
+        spentMinor: { type: integer }
+        percentUsed: { type: number }
+        status: { type: string, enum: [normal, warning, at_limit, over] }
+    BudgetInput:
+      type: object
+      required: [categoryId, limitMinor, warningPercent, enabled]
+      properties:
+        categoryId: { type: string }
+        limitMinor: { type: integer, minimum: 1 }
+        warningPercent: { type: integer, minimum: 1, maximum: 100 }
+        enabled: { type: boolean }
+    BudgetAlert:
+      type: object
+      required: [id, categoryId, month, type, createdAt]
+      properties:
+        id: { type: string }
+        categoryId: { type: string }
+        month: { type: string }
+        type: { type: string, enum: [warning, over] }
+        createdAt: { type: string, format: date-time }
+    SavingsGoal:
+      type: object
+      required: [id, name, targetMinor, currentMinor, isShared, ownerUserId, accountId, linkedAccountId, dueDate, priority, createdAt, status, cancelledAt, cancelledByUserId, contributions, pendingSettlements]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        targetMinor: { type: integer }
+        currentMinor: { type: integer }
+        isShared: { type: boolean }
+        ownerUserId: { type: [string, "null"] }
+        accountId: { type: string }
+        linkedAccountId: { type: [string, "null"] }
+        dueDate: { type: string, format: date }
+        priority: { type: string, enum: [high, medium, low] }
+        createdAt: { type: string, format: date-time }
+        status: { type: string, enum: [active, cancelled] }
+        cancelledAt: { type: [string, "null"], format: date-time }
+        cancelledByUserId: { type: [string, "null"] }
+        contributions: { type: array, items: { $ref: "#/components/schemas/SavingsGoalContribution" } }
+        pendingSettlements: { type: array, items: { $ref: "#/components/schemas/SavingsGoalPendingSettlement" } }
+        participants: { type: array, items: { $ref: "#/components/schemas/SavingsGoalParticipant" } }
+        sharedParticipation: { $ref: "#/components/schemas/SavingsGoalParticipation" }
+    SavingsGoalContribution:
+      type: object
+      required: [id, goalId, contributedByUserId, amountMinor, note, occurredAt, transactionId, reversedAt, returnTransactionId]
+      properties:
+        id: { type: string }
+        goalId: { type: string }
+        contributedByUserId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        note: { type: [string, "null"], maxLength: 160 }
+        occurredAt: { type: string, format: date-time }
+        transactionId: { type: [string, "null"] }
+        reversedAt: { type: [string, "null"], format: date-time }
+        sharedGoalId: { type: [string, "null"] }
+        returnTransactionId: { type: [string, "null"] }
+    SavingsGoalPendingSettlement:
+      type: object
+      required: [contributionId, contributedByUserId, amountMinor, transactionId]
+      properties:
+        contributionId: { type: string }
+        contributedByUserId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        transactionId: { type: string }
+    SavingsGoalParticipant:
+      type: object
+      required: [id, userId, displayName, committedMinor, status, personalGoalId]
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        displayName: { type: string }
+        committedMinor: { type: integer, minimum: 1 }
+        status: { type: string, enum: [pending, accepted, declined, removed] }
+        acceptedAt: { type: [string, "null"], format: date-time, description: "Time the current accepted participation began; null unless accepted." }
+        personalGoalId: { type: [string, "null"] }
+    SavingsGoalParticipation:
+      type: object
+      required: [id, sharedGoalId, committedMinor, status]
+      properties:
+        id: { type: string }
+        sharedGoalId: { type: string }
+        committedMinor: { type: integer, minimum: 1 }
+        status: { type: string, enum: [pending, accepted, declined, removed] }
+    SavingsGoalParticipantInput:
+      type: object
+      required: [userId, committedMinor, operationId]
+      properties:
+        userId: { type: string }
+        committedMinor: { type: integer, minimum: 1 }
+        operationId: { type: string, minLength: 1, maxLength: 200 }
+    SavingsGoalInvitationResponse:
+      type: object
+      required: [status, operationId]
+      properties:
+        status: { type: string, enum: [accepted, declined, removed] }
+        personalGoalId: { type: [string, "null"] }
+        createPersonalGoal:
+          type: boolean
+          description: When accepting without personalGoalId, create and privately map a personal goal using the shared goal terms and participant commitment. Defaults to true.
+        operationId: { type: string, minLength: 1, maxLength: 200 }
+    SavingsGoalInput:
+      type: object
+      required: [name, targetMinor, initialSavedMinor, isShared, accountId, dueDate, priority, operationId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        targetMinor: { type: integer, minimum: 1 }
+        initialSavedMinor: { type: integer, minimum: 0 }
+        isShared: { type: boolean }
+        accountId: { type: string }
+        linkedAccountId: { type: [string, "null"] }
+        dueDate: { type: string, format: date }
+        priority: { type: string, enum: [high, medium, low] }
+        operationId: { type: string, minLength: 1, maxLength: 200 }
+    SavingsGoalCancellationInput:
+      type: object
+      required: [operationId]
+      properties:
+        operationId: { type: string, minLength: 1, maxLength: 200 }
+        returnFunds: { type: boolean, default: false }
+    SavingsGoalUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        targetMinor: { type: integer, minimum: 1 }
+        isShared: { type: boolean }
+        accountId: { type: string }
+        linkedAccountId: { type: [string, "null"] }
+        dueDate: { type: string, format: date }
+        priority: { type: string, enum: [high, medium, low] }
+    SavingsGoalContributionInput:
+      type: object
+      required: [amountMinor, operationId]
+      properties:
+        amountMinor: { type: integer, minimum: 1 }
+        note: { type: string, maxLength: 160 }
+        operationId: { type: string, minLength: 1, maxLength: 200 }
+    SavingsGoalContributionCancellationInput:
+      type: object
+      additionalProperties: false
+      required: [operationId]
+      properties:
+        operationId: { type: string, minLength: 1, maxLength: 200 }
+    Device:
+      type: object
+      required: [id, name, userId, lastSeenAt, revoked]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        userId: { type: string }
+        lastSeenAt: { type: string, format: date-time }
+        revoked: { type: boolean }
+    RecurringTransactionTemplate:
+      type: object
+      required: [kind, accountId, amountMinor, currency, categoryId, note]
+      properties:
+        kind: { type: string, enum: [income, expense, transfer] }
+        accountId: { type: string }
+        destinationAccountId: { type: [string, "null"] }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string }
+        categoryId: { type: string }
+        note: { type: string, minLength: 1, maxLength: 160 }
+    RecurringRule:
+      type: object
+      required: [id, cadence, intervalMonths, nextRunAt, active, assignedUserId, endCondition, endAt, remainingOccurrences, transactionTemplate]
+      properties:
+        id: { type: string }
+        cadence: { type: string, enum: [weekly, monthly] }
+        intervalMonths: { type: integer, minimum: 1, maximum: 120 }
+        anchorDay: { type: integer, minimum: 1, maximum: 31 }
+        nextRunAt: { type: string, format: date-time }
+        active: { type: boolean }
+        assignedUserId: { type: [string, "null"] }
+        endCondition: { type: string, enum: [never, date, occurrences] }
+        endAt: { type: [string, "null"], format: date-time }
+        remainingOccurrences: { type: [integer, "null"], minimum: 0, maximum: 10000 }
+        transactionTemplate: { $ref: "#/components/schemas/RecurringTransactionTemplate" }
+    RecurringRuleInput:
+      type: object
+      required: [cadence, nextRunAt, transactionTemplate]
+      properties:
+        cadence: { type: string, enum: [weekly, monthly] }
+        intervalMonths: { type: integer, minimum: 1, maximum: 120 }
+        nextRunAt: { type: string, format: date-time }
+        assignedUserId: { type: [string, "null"] }
+        endCondition: { type: string, enum: [never, date, occurrences] }
+        endAt: { type: [string, "null"], format: date-time }
+        remainingOccurrences: { type: [integer, "null"], minimum: 1, maximum: 10000 }
+        transactionTemplate: { $ref: "#/components/schemas/RecurringTransactionTemplate" }
+    RecurringRuleUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        active: { type: boolean }
+        cadence: { type: string, enum: [weekly, monthly] }
+        intervalMonths: { type: integer, minimum: 1, maximum: 120 }
+        nextRunAt: { type: string, format: date-time }
+        assignedUserId: { type: [string, "null"] }
+        endCondition: { type: string, enum: [never, date, occurrences] }
+        endAt: { type: [string, "null"], format: date-time }
+        remainingOccurrences: { type: [integer, "null"], minimum: 1, maximum: 10000 }
+        transactionTemplate: { $ref: "#/components/schemas/RecurringTransactionTemplate" }
+    HouseholdState:
+      type: object
+      required: [groupId, groupName, baseCurrency, serverSequence, serverNow, acceleratedTest, users, accounts, categories, transactions, budgets, budgetAlerts, savingsGoals, devices, recurringRules]
+      properties:
+        groupId: { type: string }
+        groupName: { type: string }
+        baseCurrency: { type: string }
+        serverSequence: { type: integer }
+        capabilities: { type: array, readOnly: true, items: { type: string }, description: Supported financial operations. shared-only-purchases replaces personal funding; funding-retirement-audit indicates audited compensation of saved automatic funding. }
+        serverNow: { type: string, format: date-time }
+        acceleratedTest: { type: boolean }
+        users: { type: array, items: { $ref: "#/components/schemas/User" } }
+        accounts: { type: array, items: { $ref: "#/components/schemas/Account" } }
+        categories: { type: array, items: { $ref: "#/components/schemas/Category" } }
+        transactions: { type: array, items: { $ref: "#/components/schemas/Transaction" } }
+        budgets: { type: array, items: { $ref: "#/components/schemas/Budget" } }
+        budgetAlerts: { type: array, items: { $ref: "#/components/schemas/BudgetAlert" } }
+        savingsGoals: { type: array, items: { $ref: "#/components/schemas/SavingsGoal" } }
+        devices: { type: array, items: { $ref: "#/components/schemas/Device" } }
+        recurringRules: { type: array, items: { $ref: "#/components/schemas/RecurringRule" } }
+    CreateTransactionPayload:
+      type: object
+      required: [transaction]
+      properties:
+        transaction: { $ref: "#/components/schemas/Transaction" }
+    ReverseTransactionPayload:
+      type: object
+      required: [transactionId, reversalId, occurredAt]
+      properties:
+        transactionId: { type: string }
+        reversalId: { type: string }
+        occurredAt: { type: string, format: date-time }
+    SyncOperation:
+      type: object
+      required: [operationId, deviceId, clientCreatedAt, type, payload]
+      properties:
+        operationId: { type: string }
+        deviceId: { type: string }
+        clientCreatedAt: { type: string, format: date-time }
+        type: { type: string, enum: [transaction.create, transaction.reverse] }
+        payload:
+          oneOf:
+            - { $ref: "#/components/schemas/CreateTransactionPayload" }
+            - { $ref: "#/components/schemas/ReverseTransactionPayload" }
+    SyncRequest:
+      type: object
+      required: [cursor, operations]
+      properties:
+        cursor: { type: integer, minimum: 0 }
+        operations:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/SyncOperation" }
+    OperationAck:
+      type: object
+      required: [operationId, status, serverSequence]
+      properties:
+        operationId: { type: string }
+        status: { type: string, enum: [applied, duplicate, rejected] }
+        serverSequence: { type: integer }
+        error: { type: [string, "null"] }
+    SyncEvent:
+      type: object
+      required: [sequence, operationId, type, occurredAt]
+      properties:
+        sequence: { type: integer }
+        operationId: { type: string }
+        type: { type: string }
+        occurredAt: { type: string, format: date-time }
+        transaction: { oneOf: [{ $ref: "#/components/schemas/Transaction" }, { type: "null" }] }
+    SyncResponse:
+      type: object
+      required: [cursor, acknowledgements, events]
+      properties:
+        cursor: { type: integer }
+        acknowledgements: { type: array, items: { $ref: "#/components/schemas/OperationAck" } }
+        events: { type: array, items: { $ref: "#/components/schemas/SyncEvent" } }
+    CategoryTotal:
+      type: object
+      required: [categoryId, name, amountMinor, color]
+      properties:
+        categoryId: { type: string }
+        name: { type: string }
+        amountMinor: { type: integer }
+        color: { type: string }
+    Dashboard:
+      type: object
+      required: [personalBalanceMinor, sharedBalanceMinor, monthIncomeMinor, monthExpenseMinor, pendingOperations, categoryTotals, accountBalances]
+      properties:
+        personalBalanceMinor: { type: integer }
+        sharedBalanceMinor: { type: integer }
+        monthIncomeMinor: { type: integer }
+        monthExpenseMinor: { type: integer }
+        pendingOperations: { type: integer }
+        categoryTotals: { type: array, items: { $ref: "#/components/schemas/CategoryTotal" } }
+        accountBalances:
+          type: array
+          items:
+            type: object
+            required: [accountId, balanceMinor]
+            properties:
+              accountId: { type: string }
+              balanceMinor: { type: integer }

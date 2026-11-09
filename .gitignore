@@ -1,0 +1,78 @@
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# compiled output
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+.expo
+.expo-shared
+
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+
+# Local secrets, environment files, signing material, and household data
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.p8
+*.key
+*.pem
+*.mobileprovision
+key.properties
+keystore.properties
+*.hlbackup
+recovery-keyring.json
+recovery-keyring.json.*
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+/artifacts/api-server/data/backups/
+/artifacts/api-server/data/*.sqlite
+/artifacts/api-server/data/*.sqlite-shm
+/artifacts/api-server/data/*.sqlite-wal
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Replit
+.cache/
+.local/
+/downloads/

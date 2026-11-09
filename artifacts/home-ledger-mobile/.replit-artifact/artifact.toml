@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Home Ledger"
+description = "A privacy-first iOS and Android budget client for couples, families, roommates, and small teams. It pairs with a PC on the local network, stores changes offline, and safely synchronizes personal and shared finances."
+version = "1.0.0"
+id = "artifacts/home-ledger-mobile"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 21277
+
+[services.development]
+run = "pnpm --filter @workspace/home-ledger-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/home-ledger-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/home-ledger-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "21277"
+BASE_PATH = "/"

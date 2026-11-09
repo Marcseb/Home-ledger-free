@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "free-internal": {
+      "pnpm": "10.26.1",
+      "distribution": "internal",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "free",
+        "EXPO_PUBLIC_APP_VARIANT": "free"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "play-store": {
+      "pnpm": "10.26.1",
+      "distribution": "store",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "free",
+        "EXPO_PUBLIC_APP_VARIANT": "free"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}

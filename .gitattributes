@@ -1,0 +1,2 @@
+downloads/home-ledger-accelerated-currency-i18n-2026-09-24.apk filter=lfs diff=lfs merge=lfs -text
+downloads/home-ledger-accelerated-eur-sync-fix-2026-09-24.apk filter=lfs diff=lfs merge=lfs -text
