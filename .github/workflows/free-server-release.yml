@@ -4,9 +4,18 @@ on:
   push:
     tags:
       - "free-v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing Free release tag to package
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 jobs:
   package-and-release:
@@ -14,6 +23,8 @@ jobs:
     steps:
       - name: Check out the tagged Free source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -36,8 +47,8 @@ jobs:
           version="$(node -p "require('./artifacts/home-ledger-mobile/app.json').expo.version")"
           code="$(node -p "require('./artifacts/home-ledger-mobile/app.json').expo.android.versionCode")"
           expected_tag="free-v${version}"
-          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-            echo "Tag $GITHUB_REF_NAME does not match the Free app version $expected_tag." >&2
+          if [[ "$RELEASE_TAG" != "$expected_tag" ]]; then
+            echo "Tag $RELEASE_TAG does not match the Free app version $expected_tag." >&2
             exit 1
           fi
           date_utc="$(date -u +%F)"
@@ -54,7 +65,7 @@ jobs:
           SERVER_ARCHIVE: ${{ steps.release.outputs.asset }}
         run: |
           set -euo pipefail
-          release_tag="$GITHUB_REF_NAME"
+          release_tag="$RELEASE_TAG"
           for platform in linux macos; do
             sed \
               -e "s|@@RELEASE_TAG@@|$release_tag|g" \
@@ -70,17 +81,17 @@ jobs:
             "scripts/bootstrap/home-ledger-server-bootstrap-windows.ps1.template" \
             > "downloads/home-ledger-free-server-setup-windows.ps1"
           for script in downloads/home-ledger-free-server-setup-linux.sh downloads/home-ledger-free-server-setup-macos.sh; do
-            ! grep -q '@@' "$script"
+            ! grep -Eq '@@(RELEASE_TAG|SERVER_ARCHIVE|EXPECTED_OS)@@' "$script"
             bash -n "$script"
           done
-          ! grep -q '@@' downloads/home-ledger-free-server-setup-windows.ps1
+          ! grep -Eq '@@(RELEASE_TAG|SERVER_ARCHIVE|EXPECTED_OS)@@' downloads/home-ledger-free-server-setup-windows.ps1
 
       - name: Publish the tagged release, checksum, and setup launchers
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
             "downloads/${{ steps.release.outputs.asset }}" \
             "downloads/${{ steps.release.outputs.asset }}.sha256" \
             downloads/home-ledger-free-server-setup-windows.ps1 \
