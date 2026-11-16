@@ -5,7 +5,12 @@ command -v gnome-terminal >/dev/null || { echo "This shortcut requires GNOME Ter
 DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || printf '%s/Desktop' "$HOME")"
 TARGET="$DESKTOP_DIR/Home Ledger Server.desktop"
 if [[ -e "$TARGET" ]]; then
-  echo "A shortcut already exists. Keep it if it contains custom database settings; otherwise rename it before running this installer." >&2
+  existing_root="$(sed -n 's/^Path=//p' "$TARGET" | head -n 1)"
+  if [[ "$existing_root" == "$ROOT_DIR" ]]; then
+    echo "The Home Ledger Server shortcut already points to this installation; leaving it unchanged."
+    exit 0
+  fi
+  echo "A Home Ledger Server shortcut already exists for another folder. It was left unchanged; check its database settings before replacing it." >&2
   exit 1
 fi
 mkdir -p "$DESKTOP_DIR"

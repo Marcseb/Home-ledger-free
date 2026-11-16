@@ -3,46 +3,124 @@
 The Free app connects to a Home Ledger server running on a trusted home network.
 The computer must stay awake and the server terminal must remain open. Do not
 expose the server port to the public internet or configure router port forwarding.
+The recommended web-page setup downloads one OS-specific launcher. Run the
+launcher to download the fixed tagged source ZIP and its checksum, verify the
+ZIP, extract it, and create a desktop shortcut. It does not start the server or
+change firewall settings.
+
+## Recommended web setup
+
+Choose the operating system of the computer that will host the server:
+
+- **Windows:** download `home-ledger-free-server-setup-windows.ps1`, then run
+  `powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\Downloads\home-ledger-free-server-setup-windows.ps1"`
+  from PowerShell.
+- **macOS:** download `home-ledger-free-server-setup-macos.sh`, then run
+  `bash ~/Downloads/home-ledger-free-server-setup-macos.sh` from Terminal.
+- **Linux:** download `home-ledger-free-server-setup-linux.sh`, then run
+  `bash ~/Downloads/home-ledger-free-server-setup-linux.sh` from Terminal.
+
+The launcher downloads the archive and `.sha256` file from the same exact
+`free-v<version>` GitHub Release. It verifies the ZIP before extraction; a
+mismatch stops setup. Node.js 24.16 or newer is required. If it is missing or
+too old, the launcher offers the official Node.js download page and asks you to
+rerun setup after updating Node.
+
+If pnpm 10.26.1 is missing or a different version, the setup asks before
+downloading the pinned version into the server folder. It does not install pnpm
+globally. It does not make firewall changes. Keep any existing shortcut with
+custom database settings. When updating an installation created by this setup,
+stop its server first; the existing shortcut is left unchanged if it points to
+the same managed folder. An unrelated shortcut or unmanaged folder is never
+overwritten.
+
+Use the manual installation instructions below if you prefer to download and
+verify the ZIP yourself.
 
 ## Requirements
 
-- Node.js 24.16 or newer on Node 24 LTS
-- pnpm 10.26.1
+- Node.js 24.16 or newer on Node 24 LTS; the launcher offers the official download page if needed
+- pnpm 10.26.1; the launcher can download this version into the server folder after confirmation
 - Internet access for the first dependency installation
 - No Android Studio or JDK is needed to run the server
 
-Verify Node and pnpm in Terminal or PowerShell:
+To check an existing Node.js and pnpm installation in Terminal or PowerShell:
 
 ```text
 node --version
 pnpm --version
 ```
 
-If needed, install the pinned pnpm release with `npm install --global
-pnpm@10.26.1`. On Windows PowerShell, use `pnpm.cmd` if the script shim is
-blocked; do not change the machine-wide execution policy.
+The launcher never installs pnpm globally. The manual installer asks before it
+downloads pnpm locally when the pinned version is not available.
 
 ## Install and start
 
-Extract the server source ZIP to a project folder. The root `package.json`,
-`pnpm-workspace.yaml`, `artifacts/`, and `scripts/` must be directly inside it.
-Open a terminal in that folder and run:
+Download the ZIP and its `.sha256` file from the **same tagged GitHub Release**.
+Check that the release tag matches the edition and version you intend to install.
+Verify the ZIP checksum **before extracting**; do not continue if it does not match.
 
-```text
-pnpm install --frozen-lockfile
-pnpm run server
+Use the actual ZIP asset name from that release in these examples.
+
+Linux:
+
+```bash
+sha256sum -c SERVER-ZIP-NAME.zip.sha256
 ```
 
-The first command installs dependencies. The second builds and starts the
-normal-time server on port 5000. Keep the terminal open; press Ctrl+C to stop.
+macOS:
+
+```bash
+shasum -a 256 -c SERVER-ZIP-NAME.zip.sha256
+```
+
+Windows PowerShell:
+
+```powershell
+$zip = ".\SERVER-ZIP-NAME.zip"
+$checksum = "$zip.sha256"
+$expected = ((Get-Content $checksum -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+$actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "Checksum mismatch. Do not extract this ZIP." }
+"Checksum verified."
+```
+
+Replace the sample filename with the exact release asset name. After successful
+verification, extract the ZIP to a project folder. The root `package.json`,
+`pnpm-workspace.yaml`, `artifacts/`, and `scripts/` must be directly inside it.
+Open Terminal (Linux/macOS) or PowerShell (Windows) in that folder and run the
+matching setup script:
+
+| System | Setup command |
+| --- | --- |
+| Ubuntu / GNOME Linux | `bash scripts/install-home-ledger-server-linux.sh` |
+| Windows PowerShell | `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-home-ledger-server-windows.ps1` |
+| macOS Terminal | `bash scripts/install-home-ledger-server-macos.sh` |
+
+The script installs dependencies and creates the **Home Ledger Server** desktop
+shortcut. It does not start the server. Open that shortcut when ready; its
+terminal remains open while the normal-time server runs on port 5000. Press
+Ctrl+C to stop. The Linux shortcut uses GNOME Terminal. The Windows execution
+policy override applies only to this command and does not change machine policy.
 Linux users may also use `pnpm run server:linux`.
+
+If Node.js 24.16 or newer is missing, install it from the
+[official Node.js download page](https://nodejs.org/en/download), reopen the
+terminal, and rerun setup. If pnpm 10.26.1 is missing or mismatched, setup asks
+before installing it locally under `.tools/pnpm`; it never changes global pnpm.
+The setup does not change the system firewall or machine-wide PowerShell policy.
+
+To check prerequisites without installing dependencies or creating the shortcut,
+append `--check-only` to either Bash command or add `-CheckOnly` to the
+PowerShell command.
 
 Check the computer in a browser at `http://localhost:5000/api/healthz`; it
 should return `"status":"ok"`.
 
 ## Desktop shortcut
 
-Run the appropriate command from the extracted project folder:
+The setup script creates the shortcut. To recreate it after moving the project
+folder, run the appropriate command from the extracted project folder:
 
 | System | Command |
 | --- | --- |
@@ -55,9 +133,10 @@ require **Allow Launching**; Windows may ask to allow the app on a private
 network; macOS may ask for permission to control Terminal. Do not enable public
 network access.
 
-If you move the project folder, recreate the shortcut. Moving the program files
-does not move the household database. The scripts refuse to overwrite an
-existing shortcut so custom database settings are not silently lost.
+If you move the project folder, recreate the shortcut after checking for custom
+database settings. Moving the program files does not move the household
+database. The scripts keep a shortcut already pointing to the same managed
+folder, and refuse to replace an unrelated shortcut.
 
 ## Household data locations
 

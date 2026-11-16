@@ -1,6 +1,10 @@
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
+$localPnpmBin = Join-Path $root ".tools\pnpm\node_modules\.bin"
+if (Test-Path -LiteralPath $localPnpmBin) {
+    $env:Path = "$localPnpmBin;$env:Path"
+}
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "Install Node.js 24.16 or newer on Node 24 LTS, then reopen PowerShell."
 }

@@ -3,7 +3,15 @@ set -euo pipefail
 [[ "$(uname -s)" == "Darwin" ]] || { echo "Run this installer on macOS."; exit 1; }
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$HOME/Desktop/Home Ledger Server.app"
-[[ ! -e "$APP" ]] || { echo "The shortcut already exists. Rename it first; preserve any custom database settings."; exit 1; }
+if [[ -e "$APP" ]]; then
+  existing_root="$(/usr/libexec/PlistBuddy -c 'Print :HomeLedgerProjectRoot' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+  if [[ "$existing_root" == "$ROOT_DIR" ]]; then
+    echo "The Home Ledger Server shortcut already points to this installation; leaving it unchanged."
+    exit 0
+  fi
+  echo "A Home Ledger Server shortcut already exists for another folder. It was left unchanged; check its database settings before replacing it." >&2
+  exit 1
+fi
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 ESCAPED_ROOT="${ROOT_DIR//\\/\\\\}"
@@ -11,7 +19,8 @@ ESCAPED_ROOT="${ESCAPED_ROOT//\"/\\\"}"
 cat > "$TEMP_DIR/launcher.applescript" <<EOF
 on run
   set projectRoot to "$ESCAPED_ROOT"
-  set terminalCommand to "cd " & quoted form of projectRoot & " && node scripts/start-home-ledger-server.mjs; echo; printf 'Server stopped. Press Return to continue: '; read answer"
+  set pnpmBin to projectRoot & "/.tools/pnpm/node_modules/.bin"
+  set terminalCommand to "cd " & quoted form of projectRoot & " && export PATH=" & quoted form of pnpmBin & ":$PATH && node scripts/start-home-ledger-server.mjs; echo; printf 'Server stopped. Press Return to continue: '; read answer"
   tell application "Terminal"
     activate
     do script terminalCommand
@@ -30,6 +39,9 @@ for SIZE in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/HomeLedger.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile HomeLedger.icns" "$APP/Contents/Info.plist"
+PLIST_ROOT="${ROOT_DIR//\\/\\\\}"
+PLIST_ROOT="${PLIST_ROOT//\"/\\\"}"
+/usr/libexec/PlistBuddy -c "Add :HomeLedgerProjectRoot string \"$PLIST_ROOT\"" "$APP/Contents/Info.plist"
 touch "$APP"
 printf 'Created %s\nAllow access to Terminal when macOS asks.\n' "$APP"
 echo "The shortcut uses standard data locations. Preserve existing custom settings when updating a household."

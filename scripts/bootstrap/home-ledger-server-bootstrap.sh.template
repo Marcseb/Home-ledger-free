@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+RELEASE_TAG='@@RELEASE_TAG@@'
+SERVER_ARCHIVE='@@SERVER_ARCHIVE@@'
+EXPECTED_OS='@@EXPECTED_OS@@'
+RELEASE_BASE="https://github.com/Marcseb/home-ledger-free/releases/download/${RELEASE_TAG}"
+NODE_DOWNLOAD_PAGE="https://nodejs.org/en/download"
+
+fail() {
+  printf 'Home Ledger setup stopped: %s\n' "$*" >&2
+  exit 1
+}
+
+case "$(uname -s)" in
+  Linux) actual_os=linux ;;
+  Darwin) actual_os=macos ;;
+  *) fail "This setup file is for ${EXPECTED_OS}; run it on a supported desktop." ;;
+esac
+[[ "$actual_os" == "$EXPECTED_OS" ]] || fail "This setup file is for ${EXPECTED_OS}, not ${actual_os}."
+[[ "$RELEASE_TAG" != *@@* && "$SERVER_ARCHIVE" != *@@* ]] || fail "The setup file was not configured for a release."
+
+if ! command -v node >/dev/null 2>&1; then
+  printf 'Node.js 24.16 or newer is needed to install the server.\n'
+  read -r -p "Open the official Node.js download page? [y/N] " answer
+  if [[ "$answer" =~ ^[Yy] ]]; then
+    if [[ "$actual_os" == macos ]]; then open "$NODE_DOWNLOAD_PAGE"
+    elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$NODE_DOWNLOAD_PAGE" >/dev/null 2>&1 &
+    else printf 'Open this page manually: %s\n' "$NODE_DOWNLOAD_PAGE"
+    fi
+  fi
+  fail "Install Node.js 24.16 or newer, then run this setup file again."
+fi
+
+node_version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+IFS=. read -r node_major node_minor node_patch <<< "$node_version"
+if [[ ! "$node_major" =~ ^[0-9]+$ || ! "$node_minor" =~ ^[0-9]+$ ]] ||
+   (( node_major < 24 || (node_major == 24 && node_minor < 16) )); then
+  printf 'Found Node.js %s; Home Ledger needs 24.16 or newer.\n' "${node_version:-unknown}"
+  read -r -p "Open the official Node.js download page? [y/N] " answer
+  if [[ "$answer" =~ ^[Yy] ]]; then
+    if [[ "$actual_os" == macos ]]; then open "$NODE_DOWNLOAD_PAGE"
+    elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$NODE_DOWNLOAD_PAGE" >/dev/null 2>&1 &
+    else printf 'Open this page manually: %s\n' "$NODE_DOWNLOAD_PAGE"
+    fi
+  fi
+  fail "Update Node.js, then run this setup file again."
+fi
+
+command -v curl >/dev/null 2>&1 || fail "curl is required to download the verified server release."
+command -v unzip >/dev/null 2>&1 || fail "unzip is required to extract the server release."
+if command -v sha256sum >/dev/null 2>&1; then
+  verify_checksum() { sha256sum -c "$1"; }
+elif command -v shasum >/dev/null 2>&1; then
+  verify_checksum() { shasum -a 256 -c "$1"; }
+else
+  fail "A SHA-256 tool (sha256sum or shasum) is required to verify the download."
+fi
+
+case "$actual_os" in
+  linux) install_root="$HOME/.local/opt/home-ledger-free-server" ;;
+  macos) install_root="$HOME/Applications/Home Ledger Free Server" ;;
+esac
+install_marker="$install_root/.home-ledger-free-install"
+if [[ -e "$install_root" && ! -f "$install_marker" ]]; then
+  fail "The install folder already exists but is not managed by this setup. It was left untouched: $install_root"
+fi
+
+temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/home-ledger-setup.XXXXXX")"
+cleanup() { rm -rf "$temp_dir"; }
+trap cleanup EXIT
+zip_path="$temp_dir/$SERVER_ARCHIVE"
+checksum_name="$SERVER_ARCHIVE.sha256"
+
+printf 'Downloading the Home Ledger Free server release %s...\n' "$RELEASE_TAG"
+curl --fail --location --silent --show-error "$RELEASE_BASE/$SERVER_ARCHIVE" -o "$zip_path"
+curl --fail --location --silent --show-error "$RELEASE_BASE/$checksum_name" -o "$temp_dir/$checksum_name"
+(
+  cd "$temp_dir"
+  verify_checksum "$checksum_name"
+)
+
+if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:5000/api/healthz >/dev/null 2>&1; then
+  fail "A server is already running on port 5000. Stop it before installing or updating, then run setup again."
+fi
+
+mkdir -p "$install_root"
+unzip -q -o "$zip_path" -d "$install_root"
+printf '%s\n' "$RELEASE_TAG" > "$install_marker"
+[[ -f "$install_root/package.json" && -d "$install_root/artifacts/api-server" ]] ||
+  fail "The verified archive did not contain a Home Ledger server project."
+
+printf 'Installing the verified release into %s...\n' "$install_root"
+node "$install_root/scripts/install-home-ledger-server.mjs" "$actual_os"
+printf '\nHome Ledger Free server setup is complete. The household database was not changed.\n'

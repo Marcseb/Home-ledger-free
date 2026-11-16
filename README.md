@@ -103,6 +103,15 @@ The phone and server must be on the same trusted network. The first person sets
 up the household and becomes its Master; the Master creates invitations for
 other members and devices.
 
+For a low-step installation, download and run the Windows, macOS, or Linux setup
+file attached to the same tagged
+[GitHub Release](https://github.com/Marcseb/home-ledger-free/releases). It
+downloads and verifies the matching server ZIP, extracts it, and creates the
+desktop shortcut. If pnpm is needed, it asks before downloading it into the
+server folder; if Node.js is missing or too old, it offers the official download
+page. The manual ZIP and checksum are also attached. See the
+[cross-platform installation guide](docs/server-installation.md).
+
 Follow the [Linux, Windows and macOS server installation guide](docs/server-installation.md)
 for desktop setup, shortcuts, and backup options by system. For the detailed
 Linux backup steps, see [the Linux backup and recovery guide](docs/backup-recovery-user-guide.md).

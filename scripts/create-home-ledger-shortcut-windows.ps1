@@ -3,7 +3,13 @@ $root = Split-Path -Parent $PSScriptRoot
 $desktop = [Environment]::GetFolderPath("DesktopDirectory")
 $target = Join-Path $desktop "Home Ledger Server.lnk"
 if (Test-Path -LiteralPath $target) {
-    throw "A Home Ledger Server shortcut already exists. Keep it if it contains custom database settings; otherwise rename it before running this installer."
+    $existing = (New-Object -ComObject WScript.Shell).CreateShortcut($target)
+    if (($existing.WorkingDirectory -eq $root) -and
+        ($existing.Arguments -like "*start-home-ledger-server-windows.ps1*")) {
+        Write-Host "The Home Ledger Server shortcut already points to this installation; leaving it unchanged."
+        exit 0
+    }
+    throw "A Home Ledger Server shortcut already exists for another folder. It was left unchanged; check its database settings before replacing it."
 }
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($target)

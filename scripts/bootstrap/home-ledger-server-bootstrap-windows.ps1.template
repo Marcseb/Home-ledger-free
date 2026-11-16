@@ -1,0 +1,78 @@
+$ErrorActionPreference = "Stop"
+$ReleaseTag = "@@RELEASE_TAG@@"
+$ServerArchive = "@@SERVER_ARCHIVE@@"
+$ReleaseBase = "https://github.com/Marcseb/home-ledger-free/releases/download/$ReleaseTag"
+$NodeDownloadPage = "https://nodejs.org/en/download"
+
+function Stop-Setup([string]$Message) {
+    throw "Home Ledger setup stopped: $Message"
+}
+
+if ($ReleaseTag.Contains("@@") -or $ServerArchive.Contains("@@")) {
+    Stop-Setup "The setup file was not configured for a release."
+}
+
+$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCommand) {
+    $answer = Read-Host "Node.js 24.16 or newer is required. Open the official download page? [y/N]"
+    if ($answer -match "^[Yy]") { Start-Process $NodeDownloadPage }
+    Stop-Setup "Install Node.js 24.16 or newer, then run this setup file again."
+}
+
+$nodeVersionText = (& node --version 2>$null).Trim().TrimStart("v")
+$nodeVersion = $null
+if (-not [version]::TryParse($nodeVersionText, [ref]$nodeVersion) -or $nodeVersion -lt [version]"24.16.0") {
+    $answer = Read-Host "Found Node.js $nodeVersionText; version 24.16 or newer is required. Open the official download page? [y/N]"
+    if ($answer -match "^[Yy]") { Start-Process $NodeDownloadPage }
+    Stop-Setup "Update Node.js, then run this setup file again."
+}
+
+$installRoot = Join-Path $env:LOCALAPPDATA "Programs\Home Ledger Free Server"
+$installMarker = Join-Path $installRoot ".home-ledger-free-install"
+if ((Test-Path -LiteralPath $installRoot) -and -not (Test-Path -LiteralPath $installMarker)) {
+    Stop-Setup "The install folder already exists but is not managed by this setup. It was left untouched: $installRoot"
+}
+
+$tempRoot = Join-Path $env:TEMP ("home-ledger-setup-" + [guid]::NewGuid().ToString("N"))
+$zipPath = Join-Path $tempRoot $ServerArchive
+$checksumPath = "$zipPath.sha256"
+New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+
+try {
+    $zipUrl = "$ReleaseBase/$ServerArchive"
+    $checksumUrl = "$ReleaseBase/$ServerArchive.sha256"
+    Write-Host "Downloading the Home Ledger Free server release $ReleaseTag..."
+    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
+    Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -UseBasicParsing
+
+    $expected = ((Get-Content $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+    if ($expected -notmatch '^[0-9a-f]{64}$') { Stop-Setup "The release checksum file is invalid." }
+    $actual = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { Stop-Setup "The server ZIP checksum does not match. The archive was not extracted." }
+    Write-Host "Server ZIP checksum verified."
+
+    $serverRunning = $false
+    try {
+        $health = Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/healthz" -TimeoutSec 2 -UseBasicParsing
+        $serverRunning = ($health.StatusCode -eq 200)
+    } catch {}
+    if ($serverRunning) {
+        Stop-Setup "A server is already running on port 5000. Stop it before installing or updating, then run setup again."
+    }
+
+    New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $installRoot -Force
+    Set-Content -LiteralPath $installMarker -Value $ReleaseTag -Encoding ASCII
+    if (-not (Test-Path (Join-Path $installRoot "package.json")) -or
+        -not (Test-Path (Join-Path $installRoot "artifacts\api-server"))) {
+        Stop-Setup "The verified archive did not contain a Home Ledger server project."
+    }
+
+    Write-Host "Installing the verified release. You will be asked before pnpm is downloaded."
+    & node (Join-Path $installRoot "scripts\install-home-ledger-server.mjs") windows
+    if ($LASTEXITCODE -ne 0) { Stop-Setup "The server setup did not complete." }
+    Write-Host "`nHome Ledger Free server setup is complete. The household database was not changed."
+}
+finally {
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+}

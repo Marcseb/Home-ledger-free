@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { assertSourceArchiveContent, isExcludedSourceArchivePath } from './source-archive-safety.mjs';
@@ -8,15 +8,17 @@ import { assertSourceArchiveContent, isExcludedSourceArchivePath } from './sourc
 // Validate a clean working-tree source copy, not a git-only archive. Generated
 // schemas are needed even when untracked. Never include live server state.
 const root = resolve(import.meta.dirname, '../..');
-const name = process.argv[2] ?? 'home-ledger-linux-server-shared-only-2026-10-11-source.zip';
+const argumentsAfterScript = process.argv.slice(2).filter((argument) => argument !== '--');
+if (argumentsAfterScript.length > 1) throw new Error('Provide one ZIP filename only');
+const name = argumentsAfterScript[0] ?? 'home-ledger-linux-server-shared-only-2026-10-11-source.zip';
 if (basename(name) !== name || !name.endsWith('.zip')) throw new Error('Provide a ZIP filename only');
 const output = join(root, 'downloads', name);
 if (existsSync(output)) throw new Error('Refusing to overwrite an existing release');
 const stage = mkdtempSync(join(tmpdir(), 'home-ledger-linux-source-'));
-const excluded = new Set(['node_modules', 'dist', 'build', '.expo', '.gradle', '.cxx', '.git', '.local', '.agents', 'android', 'ios', '__pycache__', '.replit-artifact']);
+const excluded = new Set(['node_modules', '.tools', 'dist', 'build', '.expo', '.gradle', '.cxx', '.git', '.local', '.agents', 'android', 'ios', '__pycache__', '.replit-artifact']);
 const filter = (path) => {
   const file = basename(path);
-  return !excluded.has(file) && !isExcludedSourceArchivePath(path) && !file.startsWith('expo-qr')
+  return !excluded.has(file) && !isExcludedSourceArchivePath(relative(root, path)) && !file.startsWith('expo-qr')
     && resolve(path) !== join(root, 'artifacts/api-server/data');
 };
 const env = { ...process.env, APP_VARIANT: 'production', CI: '1' };
@@ -27,7 +29,7 @@ const run = (command, args, cwd = stage) => {
   if (result.status !== 0) throw new Error(`${command} failed (${result.status})`);
 };
 try {
-  for (const relative of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.gitignore', '.gitattributes', 'tsconfig.json', 'tsconfig.base.json', 'LINUX-SERVER-UPDATE.md', 'artifacts/home-ledger-mobile', 'artifacts/api-server', 'lib/api-client-react', 'lib/api-spec', 'lib/api-zod', 'lib/db', 'scripts', 'docs']) {
+  for (const relative of ['README.md', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.npmrc', '.gitignore', '.gitattributes', 'tsconfig.json', 'tsconfig.base.json', 'LINUX-SERVER-UPDATE.md', 'artifacts/home-ledger-mobile', 'artifacts/api-server', 'lib/api-client-react', 'lib/api-spec', 'lib/api-zod', 'lib/db', 'scripts', 'docs']) {
     if (existsSync(join(root, relative))) cpSync(join(root, relative), join(stage, relative), { recursive: true, filter });
   }
   console.log(`Isolated server-source staging: ${stage}`);
@@ -52,12 +54,19 @@ try {
     const listing = spawnSync('unzip', ['-Z1', output], { encoding: 'utf8' });
     if (listing.status !== 0) throw new Error(`Could not list server source ZIP entries (${listing.status})`);
     assertSourceArchiveContent(listing.stdout.split(/\r?\n/), [
+      'README.md',
       'package.json',
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
       'artifacts/api-server/package.json',
       'artifacts/api-server/src/index.ts',
       'scripts/start-home-ledger-server.sh',
+      'scripts/install-home-ledger-server.mjs',
+      'scripts/install-home-ledger-server-linux.sh',
+      'scripts/install-home-ledger-server-macos.sh',
+      'scripts/install-home-ledger-server-windows.ps1',
+      'scripts/bootstrap/home-ledger-server-bootstrap.sh.template',
+      'scripts/bootstrap/home-ledger-server-bootstrap-windows.ps1.template',
       'LINUX-SERVER-UPDATE.md',
     ], 'Linux server');
   } catch (error) {

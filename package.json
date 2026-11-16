@@ -7,6 +7,7 @@
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "package:android-free-source": "node scripts/src/package-android-source.mjs",
+    "package:server": "node scripts/src/package-linux-server.mjs",
     "server": "node scripts/start-home-ledger-server.mjs",
     "invite-master": "node scripts/start-home-ledger-server.mjs --invite-master",
     "server:linux": "bash ./scripts/start-home-ledger-server.sh",
