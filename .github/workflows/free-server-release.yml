@@ -1,0 +1,90 @@
+name: Publish Home Ledger Free server source
+
+on:
+  push:
+    tags:
+      - "free-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the tagged Free source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate tag and choose release filenames
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./artifacts/home-ledger-mobile/app.json').expo.version")"
+          code="$(node -p "require('./artifacts/home-ledger-mobile/app.json').expo.android.versionCode")"
+          expected_tag="free-v${version}"
+          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match the Free app version $expected_tag." >&2
+            exit 1
+          fi
+          date_utc="$(date -u +%F)"
+          asset="home-ledger-free-v${version}-code_${code}-server-source-${date_utc}.zip"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build and validate the server source ZIP
+        run: pnpm run package:server -- "${{ steps.release.outputs.asset }}"
+
+      - name: Create version-pinned setup launchers
+        shell: bash
+        env:
+          SERVER_ARCHIVE: ${{ steps.release.outputs.asset }}
+        run: |
+          set -euo pipefail
+          release_tag="$GITHUB_REF_NAME"
+          for platform in linux macos; do
+            sed \
+              -e "s|@@RELEASE_TAG@@|$release_tag|g" \
+              -e "s|@@SERVER_ARCHIVE@@|$SERVER_ARCHIVE|g" \
+              -e "s|@@EXPECTED_OS@@|$platform|g" \
+              "scripts/bootstrap/home-ledger-server-bootstrap.sh.template" \
+              > "downloads/home-ledger-free-server-setup-${platform}.sh"
+            chmod 755 "downloads/home-ledger-free-server-setup-${platform}.sh"
+          done
+          sed \
+            -e "s|@@RELEASE_TAG@@|$release_tag|g" \
+            -e "s|@@SERVER_ARCHIVE@@|$SERVER_ARCHIVE|g" \
+            "scripts/bootstrap/home-ledger-server-bootstrap-windows.ps1.template" \
+            > "downloads/home-ledger-free-server-setup-windows.ps1"
+          for script in downloads/home-ledger-free-server-setup-linux.sh downloads/home-ledger-free-server-setup-macos.sh; do
+            ! grep -q '@@' "$script"
+            bash -n "$script"
+          done
+          ! grep -q '@@' downloads/home-ledger-free-server-setup-windows.ps1
+
+      - name: Publish the tagged release, checksum, and setup launchers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            "downloads/${{ steps.release.outputs.asset }}" \
+            "downloads/${{ steps.release.outputs.asset }}.sha256" \
+            downloads/home-ledger-free-server-setup-windows.ps1 \
+            downloads/home-ledger-free-server-setup-macos.sh \
+            downloads/home-ledger-free-server-setup-linux.sh \
+            --title "Home Ledger Free ${{ steps.release.outputs.version }}" \
+            --notes "Home Ledger Free server setup for Windows, macOS, and Linux. Download and run the setup launcher for your desktop. It downloads the source ZIP and checksum from this exact release, verifies the ZIP before extraction, then installs and creates the desktop shortcut. Node.js 24.16 or newer is required; if missing, the launcher offers the official Node.js download page. If pnpm 10.26.1 is missing, the setup asks before downloading it into the server folder; it does not change global pnpm or firewall settings. Manual source ZIP and checksum are also attached."
